@@ -37,19 +37,74 @@ namespace remap
 namespace plugins
 {
 struct Query {
+  std::shared_ptr<rclcpp::Node> node_ptr_;
+
   std::string id_;
+
   std::vector<std::string> patterns_;
+  std::vector<std::string> vars_;
+  std::vector<std::string> models_;
+
+  bool dynamic_;
+
   rclcpp::Time req_time_;
   rclcpp::Duration req_duration_;
-  bool dynamic_;
-  Query(): req_duration_(0, 0){}
+  rclcpp::Duration frequency_;
+  rclcpp::Time last_execution_;
+
+  std::map<std::string, rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr> query_pubs_;
+
+  Query(): req_duration_(0, 0), frequency_(0, 0){}
 
   Query(
+    const std::shared_ptr<rclcpp::Node> node_ptr,
     const std::string & id,
     const std::vector<std::string> & patterns,
-    const rclcpp::Duration & req_duration):
-  id_(id), patterns_(patterns), req_duration_(req_duration) {
-    req_time_ = rclcpp::Clock().now();
+    const std::vector<std::string> & vars,
+    const std::vector<std::string> & models,
+    bool dynamic,
+    const rclcpp::Duration & req_duration,
+    const rclcpp::Duration & frequency):
+  node_ptr_(node_ptr),
+  id_(id), 
+  patterns_(patterns),
+  vars_(vars),
+  models_(models),
+  dynamic_(dynamic),
+  frequency_(frequency),
+  req_duration_(req_duration),
+  req_time_(node_ptr_->get_clock()->now()),
+  last_execution_(node_ptr_->get_clock()->now()) {}
+
+  ~Query() {
+    query_pubs_.clear();
+  }
+
+  void addPublisher(const std::string & variable) {
+    rclcpp::QoS pub_qos(1);
+    pub_qos.reliable();
+    if (!dynamic_) {
+      pub_qos.transient_local();
+    }
+
+    query_pubs_[variable] = node_ptr_->create_publisher<sensor_msgs::msg::PointCloud2>(
+      "/remap/query/results/" + id_ + "/" + variable, pub_qos);
+  }
+
+  void publish(
+    const std::string & variable,
+    const pcl::PointCloud<pcl::PointXYZ> & cloud,
+    const std::string & frame_id)
+  {
+    if (query_pubs_.find(variable) == query_pubs_.end())
+    {
+      addPublisher(variable);
+    }
+    sensor_msgs::msg::PointCloud2 cloud_msg;
+    pcl::toROSMsg(cloud, cloud_msg);
+    cloud_msg.header.stamp = node_ptr_->get_clock()->now();
+    cloud_msg.header.frame_id = frame_id;
+    query_pubs_[variable]->publish(cloud_msg);
   }
 };
 
@@ -60,10 +115,11 @@ private:
   rclcpp::Node::SharedPtr query_node_;
 
   rclcpp::Service<remap_msgs::srv::Query>::SharedPtr query_server_;
-  std::map<std::string, rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr> query_pubs_;
+  std::map<std::string, rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr> static_query_pubs_;
   rclcpp::Client<kb_msgs::srv::Query>::SharedPtr query_client_;
 
   std::map<std::string, Query> queries_;
+  std::map<std::string, Query> static_queries_;
 
   void queryCallback(
     const std::shared_ptr<remap_msgs::srv::Query::Request> req,
@@ -72,6 +128,8 @@ private:
   std::vector<std::string> split(
     std::string s,
     const std::string & delimiter);
+
+  std::shared_ptr<kb_msgs::srv::Query::Response> performQuery(Query & query);
 public:
   PluginQuery();
   PluginQuery(

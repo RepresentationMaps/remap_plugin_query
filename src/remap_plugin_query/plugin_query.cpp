@@ -64,29 +64,13 @@ std::vector<std::string> PluginQuery::split(
   return tokens;
 }
 
-void PluginQuery::queryCallback(
-  const std::shared_ptr<remap_msgs::srv::Query::Request> req,
-  const std::shared_ptr<remap_msgs::srv::Query::Response> res)
-{
-  RCLCPP_INFO(node_ptr_->get_logger(), "Received reMap query");
+std::shared_ptr<kb_msgs::srv::Query::Response> PluginQuery::performQuery(
+  Query & query) {
 
   kb_msgs::srv::Query::Request kb_query;
-  kb_query.patterns = req->patterns;
-  kb_query.vars = req->vars;
-  kb_query.models = req->models;
-
-  queries_[req->id] = Query(req->id, req->patterns, req->duration);
-
-  // forwarding the query to the knowledge base
-  if (!query_client_->wait_for_service(std::chrono::seconds(1))) {
-    if (!rclcpp::ok()) {
-      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Interrupted while waiting for the service. Exiting.");
-      return;
-    }
-    RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "knowledge base not available, aborting");
-    res->success = false;
-    return;
-  }
+  kb_query.patterns = query.patterns_;
+  kb_query.vars = query.vars_;
+  kb_query.models = query.models_;
 
   auto kb_query_result = query_client_->async_send_request(std::make_shared<kb_msgs::srv::Query::Request>(kb_query));
   std::shared_ptr<kb_msgs::srv::Query::Response> kb_query_result_raw;
@@ -109,7 +93,6 @@ void PluginQuery::queryCallback(
           // std::cout<<elem.key()<<"\t"<<elem.value()<<std::endl;
           if (spatial_query_results.find(elem.key()) == spatial_query_results.end())
           {
-
             pcl::PointCloud<pcl::PointXYZ> cloud;
             spatial_query_results[elem.key()] = cloud;
           }
@@ -118,26 +101,45 @@ void PluginQuery::queryCallback(
       }
       for (const auto & spatial_query_result : spatial_query_results)
       {
-        if (query_pubs_.find(req->id + "/" + spatial_query_result.first) == query_pubs_.end())
-        {
-          rclcpp::QoS pub_qos(1);
-          pub_qos.reliable();
-          pub_qos.transient_local();
-
-          query_pubs_[req->id + "/" + spatial_query_result.first] = query_node_->create_publisher<sensor_msgs::msg::PointCloud2>(
-            "/remap/query/results/" + req->id + "/" + spatial_query_result.first, pub_qos);
-        }
-        sensor_msgs::msg::PointCloud2 cloud_msg;
-        pcl::toROSMsg(spatial_query_result.second, cloud_msg);
-        cloud_msg.header.stamp = node_ptr_->now();
-        cloud_msg.header.frame_id = semantic_map_->getFixedFrame();
-        query_pubs_[req->id + "/" + spatial_query_result.first]->publish(cloud_msg);
+        query.publish(spatial_query_result.first, spatial_query_result.second, semantic_map_->getFixedFrame());
       }
     }
   } else {
     RCLCPP_ERROR(node_ptr_->get_logger(), "Failed to call the kb query");
+    return nullptr;
+  }
+
+  query.last_execution_ = node_ptr_->get_clock()->now();
+
+  return kb_query_result_raw;
+}
+
+void PluginQuery::queryCallback(
+  const std::shared_ptr<remap_msgs::srv::Query::Request> req,
+  const std::shared_ptr<remap_msgs::srv::Query::Response> res)
+{
+  RCLCPP_INFO(node_ptr_->get_logger(), "Received reMap query");
+
+  auto query = Query(
+    node_ptr_, req->id, req->patterns, req->vars,
+    req->models, req->dynamic, req->duration, req->frequency);
+
+  if (!query_client_->wait_for_service(std::chrono::seconds(1))) {
+    if (!rclcpp::ok()) {
+      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Interrupted while waiting for the service. Exiting.");
+      return;
+    }
+    RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "knowledge base not available, aborting");
     res->success = false;
     return;
+  }
+
+  auto kb_query_result_raw = performQuery(query);
+
+  if (query.dynamic_) {
+    queries_[req->id] = query;
+  } else {
+    static_queries_[req->id] = query;
   }
 
   if (kb_query_result_raw)
@@ -147,11 +149,43 @@ void PluginQuery::queryCallback(
     res->error_msg = kb_query_result_raw->error_msg;
 
     RCLCPP_INFO_STREAM(node_ptr_->get_logger(), "Query result: " << res->json);
+  } else {
+    RCLCPP_WARN(node_ptr_->get_logger(), "knowledge base not available, aborting");
+    res->success = false;
   }
 }
 
 void PluginQuery::run()
 {
+  if (!query_client_->wait_for_service(std::chrono::seconds(1))) {
+    if (!rclcpp::ok()) {
+      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Interrupted while waiting for the service. Exiting.");
+      return;
+    }
+    RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "knowledge base not available, aborting");
+    return;
+  }
+
+  std::vector<std::string> queries_to_remove;
+
+  for (auto & query : queries_) {
+    if (query.second.dynamic_) {
+      if ((query.second.req_time_ + query.second.req_duration_) < node_ptr_->get_clock()->now()) {
+        queries_to_remove.push_back(query.first);
+        RCLCPP_WARN(node_ptr_->get_logger(), "Completed query %s", query.first.c_str());
+      } else {
+        if ((query.second.last_execution_ + query.second.frequency_) < node_ptr_->get_clock()->now()) {
+          performQuery(query.second);
+        }
+      }
+    }
+  }
+
+  for (const auto & query : queries_to_remove) {
+    queries_.erase(query);
+  }
+
+  std::cout<<"Completed erasing"<<std::endl;
 }
 
 }  // namespace plugins
