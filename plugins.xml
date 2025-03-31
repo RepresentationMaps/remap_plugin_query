@@ -1,0 +1,5 @@
+<library path="remap_plugin_query">
+  <class name="PluginQuery" type="remap::plugins::PluginQuery" base_class_type="remap::plugins::PluginBase">
+    <description>A plugin enabling reMap querying.</description>
+  </class>
+</library>
