@@ -41,6 +41,8 @@ void PluginQuery::initialize()
   query_executor_ = rclcpp::executors::SingleThreadedExecutor::make_shared();
   query_node_ = rclcpp::Node::make_shared("remap_query_node");
 
+  tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*query_node_);
+
   query_server_ = node_ptr_->create_service<remap_msgs::srv::Query>(
     "/remap/query", std::bind(&PluginQuery::queryCallback, this, std::placeholders::_1, std::placeholders::_2));
   query_client_ = query_node_->create_client<kb_msgs::srv::Query>("/kb/query");
@@ -84,7 +86,7 @@ std::shared_ptr<kb_msgs::srv::Query::Response> PluginQuery::performQuery(
     if (query_results.size() > 2)
     {
       auto query_results_vec = split(query_results.substr(1, query_results.size() - 2), ",");
-      std::map<std::string, pcl::PointCloud<pcl::PointXYZ>> spatial_query_results;
+      std::map<std::string, pcl::PointCloud<pcl::PointXYZI>> spatial_query_results;
       for (auto query_result : query_results_vec)
       {
         auto query_result_json = nlohmann::json::parse(query_result);
@@ -93,7 +95,7 @@ std::shared_ptr<kb_msgs::srv::Query::Response> PluginQuery::performQuery(
           // std::cout<<elem.key()<<"\t"<<elem.value()<<std::endl;
           if (spatial_query_results.find(elem.key()) == spatial_query_results.end())
           {
-            pcl::PointCloud<pcl::PointXYZ> cloud;
+            pcl::PointCloud<pcl::PointXYZI> cloud;
             spatial_query_results[elem.key()] = cloud;
           }
           semantic_map_->getEntity(elem.value(), *regions_register_, spatial_query_results[elem.key()]);
@@ -102,6 +104,26 @@ std::shared_ptr<kb_msgs::srv::Query::Response> PluginQuery::performQuery(
       for (const auto & spatial_query_result : spatial_query_results)
       {
         query.publish(spatial_query_result.first, spatial_query_result.second, semantic_map_->getFixedFrame());
+        if (query.publish_tf_) {
+          geometry_msgs::msg::TransformStamped t;
+          auto centroid_it = query.centroids_.find(spatial_query_result.first);
+          if (centroid_it == query.centroids_.end())
+          {
+            RCLCPP_WARN(node_ptr_->get_logger(), "Centroid not found for %s", spatial_query_result.first.c_str());
+            continue;
+          }
+          t.header.stamp = node_ptr_->get_clock()->now();
+          t.child_frame_id = query.id_ + "/" + spatial_query_result.first;
+          t.header.frame_id = semantic_map_->getFixedFrame();
+          t.transform.translation.x = centroid_it->second[0];
+          t.transform.translation.y = centroid_it->second[1];
+          t.transform.translation.z = centroid_it->second[2];
+          t.transform.rotation.x = 0;
+          t.transform.rotation.y = 0;
+          t.transform.rotation.z = 0;
+          t.transform.rotation.w = 1;
+          tf_broadcaster_->sendTransform(t);
+        }
       }
     }
   } else {
@@ -122,11 +144,12 @@ void PluginQuery::queryCallback(
 
   auto query = Query(
     node_ptr_, req->id, req->patterns, req->vars,
-    req->models, req->dynamic, req->duration, req->frequency);
+    req->models, req->dynamic, req->duration, req->frequency, req->publish_tf);
 
   if (!query_client_->wait_for_service(std::chrono::seconds(1))) {
     if (!rclcpp::ok()) {
-      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Interrupted while waiting for the service. Exiting.");
+      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"),
+        "Interrupted while waiting for the service. Exiting.");
       return;
     }
     RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "knowledge base not available, aborting");
@@ -159,7 +182,8 @@ void PluginQuery::run()
 {
   if (!query_client_->wait_for_service(std::chrono::seconds(1))) {
     if (!rclcpp::ok()) {
-      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"), "Interrupted while waiting for the service. Exiting.");
+      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"),
+        "Interrupted while waiting for the service. Exiting.");
       return;
     }
     RCLCPP_WARN(rclcpp::get_logger("rclcpp"), "knowledge base not available, aborting");
@@ -174,7 +198,8 @@ void PluginQuery::run()
         queries_to_remove.push_back(query.first);
         RCLCPP_WARN(node_ptr_->get_logger(), "Completed query %s", query.first.c_str());
       } else {
-        if ((query.second.last_execution_ + query.second.frequency_) < node_ptr_->get_clock()->now()) {
+        if ((query.second.last_execution_ + query.second.frequency_)
+         < node_ptr_->get_clock()->now()) {
           performQuery(query.second);
         }
       }

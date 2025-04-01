@@ -15,6 +15,10 @@
 #ifndef REMAP_PLUGIN_QUERY__PLUGIN_QUERY_HPP_
 #define REMAP_PLUGIN_QUERY__PLUGIN_QUERY_HPP_
 
+#include <pcl/common/centroid.h>
+
+#include <tf2_ros/transform_broadcaster.h>
+
 #include <memory>
 #include <mutex>
 #include <string>
@@ -22,15 +26,15 @@
 
 #include <rclcpp/rclcpp.hpp>
 
+#include <geometry_msgs/msg/transform_stamped.hpp>
 #include <kb_msgs/srv/query.hpp>
+#include <sensor_msgs/msg/point_cloud2.hpp>
 
 #include <remap_msgs/srv/query.hpp>
 #include <remap_plugin_base/plugin_base.hpp>
 #include <remap_plugin_base/semantic_plugin.hpp>
 
 #include <nlohmann/json.hpp>
-
-#include <sensor_msgs/msg/point_cloud2.hpp>
 
 namespace remap
 {
@@ -47,10 +51,13 @@ struct Query {
 
   bool dynamic_;
 
-  rclcpp::Time req_time_;
   rclcpp::Duration req_duration_;
   rclcpp::Duration frequency_;
+  rclcpp::Time req_time_;
   rclcpp::Time last_execution_;
+
+  bool publish_tf_;
+  std::map<std::string, Eigen::Vector4d> centroids_;
 
   std::map<std::string, rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr> query_pubs_;
 
@@ -62,19 +69,21 @@ struct Query {
     const std::vector<std::string> & patterns,
     const std::vector<std::string> & vars,
     const std::vector<std::string> & models,
-    bool dynamic,
+    const bool & dynamic,
     const rclcpp::Duration & req_duration,
-    const rclcpp::Duration & frequency):
+    const rclcpp::Duration & frequency,
+    const bool & publish_tf = false):
   node_ptr_(node_ptr),
   id_(id), 
   patterns_(patterns),
   vars_(vars),
   models_(models),
   dynamic_(dynamic),
-  frequency_(frequency),
   req_duration_(req_duration),
+  frequency_(frequency),
   req_time_(node_ptr_->get_clock()->now()),
-  last_execution_(node_ptr_->get_clock()->now()) {}
+  last_execution_(node_ptr_->get_clock()->now()),
+  publish_tf_(publish_tf) {}
 
   ~Query() {
     query_pubs_.clear();
@@ -93,7 +102,7 @@ struct Query {
 
   void publish(
     const std::string & variable,
-    const pcl::PointCloud<pcl::PointXYZ> & cloud,
+    const pcl::PointCloud<pcl::PointXYZI> & cloud,
     const std::string & frame_id)
   {
     if (query_pubs_.find(variable) == query_pubs_.end())
@@ -105,6 +114,11 @@ struct Query {
     cloud_msg.header.stamp = node_ptr_->get_clock()->now();
     cloud_msg.header.frame_id = frame_id;
     query_pubs_[variable]->publish(cloud_msg);
+    if (publish_tf_) {
+      centroids_[variable] = Eigen::Vector4d::Zero();
+      pcl::compute3DCentroid(cloud, centroids_[variable]);
+      std::cout<<"Centroid: "<<centroids_[variable]<<std::endl;
+    }
   }
 };
 
@@ -120,6 +134,8 @@ private:
 
   std::map<std::string, Query> queries_;
   std::map<std::string, Query> static_queries_;
+
+  std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
 
   void queryCallback(
     const std::shared_ptr<remap_msgs::srv::Query::Request> req,

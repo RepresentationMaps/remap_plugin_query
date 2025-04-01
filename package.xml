@@ -21,6 +21,7 @@
   <depend>remap_msgs</depend>
   <depend>remap_plugin_base</depend>
   <depend>remap_regions_register</depend>
+  <depend>tf2_ros</depend>
 
   <test_depend>ament_cmake_gmock</test_depend>
   <test_depend>ament_lint_auto</test_depend>
