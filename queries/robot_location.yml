@@ -1,0 +1,12 @@
+patterns: ["tiago_pro isIn ?room"]
+vars: []
+models: []
+dynamic: True
+duration:
+  sec: -1
+  nanosec: 0
+frequency:
+  sec: 1
+  nanosec: 0
+publish_tf: True
+id: "presence_query"

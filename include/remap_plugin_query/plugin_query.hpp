@@ -36,8 +36,6 @@
 #include <remap_plugin_base/plugin_base.hpp>
 #include <remap_plugin_base/semantic_plugin.hpp>
 
-#include <nlohmann/json.hpp>
-
 namespace remap
 {
 namespace plugins
@@ -59,6 +57,7 @@ struct Query {
   rclcpp::Time last_execution_;
 
   bool publish_tf_;
+  bool executed_;
   std::map<std::string, Eigen::Vector4d> centroids_;
 
   std::map<std::string, rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr> query_pubs_;
@@ -85,7 +84,8 @@ struct Query {
   frequency_(frequency),
   req_time_(node_ptr_->get_clock()->now()),
   last_execution_(node_ptr_->get_clock()->now()),
-  publish_tf_(publish_tf) {}
+  publish_tf_(publish_tf),
+  executed_(false) {}
 
   ~Query() {
     query_pubs_.clear();
@@ -107,6 +107,9 @@ struct Query {
     const pcl::PointCloud<pcl::PointXYZI> & cloud,
     const std::string & frame_id)
   {
+    if (cloud.empty()) {
+      return;
+    }
     if (query_pubs_.find(variable) == query_pubs_.end())
     {
       addPublisher(variable);
@@ -153,6 +156,8 @@ private:
     const std::string & delimiter);
 
   std::shared_ptr<kb_msgs::srv::Query::Response> performQuery(Query & query);
+
+  Query loadQueryFromYAML(const std::string & file_path);
 public:
   PluginQuery();
   PluginQuery(

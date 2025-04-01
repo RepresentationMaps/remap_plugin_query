@@ -8,4 +8,5 @@ duration:
 frequency:
   sec: 0
   nanosec: 0
-publish_tf: 
+publish_tf: True
+id: "kitchen_query"
