@@ -31,6 +31,7 @@
 #include <sensor_msgs/msg/point_cloud2.hpp>
 
 #include <remap_msgs/srv/query.hpp>
+#include <remap_msgs/srv/remove_query.hpp>
 #include <remap_plugin_base/plugin_base.hpp>
 #include <remap_plugin_base/semantic_plugin.hpp>
 
@@ -117,7 +118,6 @@ struct Query {
     if (publish_tf_) {
       centroids_[variable] = Eigen::Vector4d::Zero();
       pcl::compute3DCentroid(cloud, centroids_[variable]);
-      std::cout<<"Centroid: "<<centroids_[variable]<<std::endl;
     }
   }
 };
@@ -129,6 +129,7 @@ private:
   rclcpp::Node::SharedPtr query_node_;
 
   rclcpp::Service<remap_msgs::srv::Query>::SharedPtr query_server_;
+  rclcpp::Service<remap_msgs::srv::RemoveQuery>::SharedPtr remove_query_server_;
   std::map<std::string, rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr> static_query_pubs_;
   rclcpp::Client<kb_msgs::srv::Query>::SharedPtr query_client_;
 
@@ -140,6 +141,10 @@ private:
   void queryCallback(
     const std::shared_ptr<remap_msgs::srv::Query::Request> req,
     const std::shared_ptr<remap_msgs::srv::Query::Response> res);
+
+  void removeQueryCallback(
+    const std::shared_ptr<remap_msgs::srv::RemoveQuery::Request> req,
+    const std::shared_ptr<remap_msgs::srv::RemoveQuery::Response> res);
 
   std::vector<std::string> split(
     std::string s,

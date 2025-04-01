@@ -1,0 +1,3 @@
+/remap_manager:
+  ros__parameters:
+    plugin/query/default_queries: ["kitchen_query"]

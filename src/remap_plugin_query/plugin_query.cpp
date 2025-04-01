@@ -45,6 +45,8 @@ void PluginQuery::initialize()
 
   query_server_ = node_ptr_->create_service<remap_msgs::srv::Query>(
     "/remap/query", std::bind(&PluginQuery::queryCallback, this, std::placeholders::_1, std::placeholders::_2));
+  remove_query_server_ = node_ptr_->create_service<remap_msgs::srv::RemoveQuery>(
+    "/remap/remove_query", std::bind(&PluginQuery::removeQueryCallback, this, std::placeholders::_1, std::placeholders::_2));
   query_client_ = query_node_->create_client<kb_msgs::srv::Query>("/kb/query");
 }
 
@@ -92,7 +94,6 @@ std::shared_ptr<kb_msgs::srv::Query::Response> PluginQuery::performQuery(
         auto query_result_json = nlohmann::json::parse(query_result);
         for (const auto & elem : query_result_json.items())
         {
-          // std::cout<<elem.key()<<"\t"<<elem.value()<<std::endl;
           if (spatial_query_results.find(elem.key()) == spatial_query_results.end())
           {
             pcl::PointCloud<pcl::PointXYZI> cloud;
@@ -142,6 +143,12 @@ void PluginQuery::queryCallback(
 {
   RCLCPP_INFO(node_ptr_->get_logger(), "Received reMap query");
 
+  if ((req->frequency.sec < 0) || ((req->frequency.sec == 0) && (req->frequency.nanosec == 0))) {
+    RCLCPP_WARN(node_ptr_->get_logger(), "Frequency is not valid, aborting");
+    res->success = false;
+    return;
+  }
+
   auto query = Query(
     node_ptr_, req->id, req->patterns, req->vars,
     req->models, req->dynamic, req->duration, req->frequency, req->publish_tf);
@@ -178,6 +185,29 @@ void PluginQuery::queryCallback(
   }
 }
 
+void PluginQuery::removeQueryCallback(
+    const std::shared_ptr<remap_msgs::srv::RemoveQuery::Request> req,
+    const std::shared_ptr<remap_msgs::srv::RemoveQuery::Response> res) {
+  auto query_it = queries_.find(req->id);
+
+  if (query_it == queries_.end()) {
+    RCLCPP_WARN(node_ptr_->get_logger(), "Query %s not found", req->id.c_str());
+    res->success = false;
+    return;
+  }
+
+  if (query_it->second.req_duration_.seconds() >= 0) {
+    res->exec_left = (query_it->second.req_time_ + query_it->second.req_duration_) - node_ptr_->get_clock()->now();
+  } else {
+    res->exec_left = rclcpp::Duration(-1, 0);
+  }
+
+  queries_.erase(query_it);
+  RCLCPP_INFO(node_ptr_->get_logger(), "Removed query %s", req->id.c_str());
+
+  res->success = true;
+}
+
 void PluginQuery::run()
 {
   if (!query_client_->wait_for_service(std::chrono::seconds(1))) {
@@ -194,7 +224,8 @@ void PluginQuery::run()
 
   for (auto & query : queries_) {
     if (query.second.dynamic_) {
-      if ((query.second.req_time_ + query.second.req_duration_) < node_ptr_->get_clock()->now()) {
+      if (((query.second.req_time_ + query.second.req_duration_) < node_ptr_->get_clock()->now())
+       && (query.second.req_duration_.seconds() > 0)) {
         queries_to_remove.push_back(query.first);
         RCLCPP_WARN(node_ptr_->get_logger(), "Completed query %s", query.first.c_str());
       } else {
@@ -209,8 +240,6 @@ void PluginQuery::run()
   for (const auto & query : queries_to_remove) {
     queries_.erase(query);
   }
-
-  std::cout<<"Completed erasing"<<std::endl;
 }
 
 }  // namespace plugins
