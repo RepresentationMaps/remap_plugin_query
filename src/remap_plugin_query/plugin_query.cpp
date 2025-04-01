@@ -42,11 +42,16 @@ void PluginQuery::initialize()
   query_node_ = rclcpp::Node::make_shared("remap_query_node");
 
   tf_broadcaster_ = std::make_unique<tf2_ros::TransformBroadcaster>(*query_node_);
+  static_tf_broadcaster_ = std::make_unique<tf2_ros::StaticTransformBroadcaster>(*query_node_);
 
   query_server_ = node_ptr_->create_service<remap_msgs::srv::Query>(
-    "/remap/query", std::bind(&PluginQuery::queryCallback, this, std::placeholders::_1, std::placeholders::_2));
+    "/remap/query", 
+    std::bind(&PluginQuery::queryCallback, this,
+      std::placeholders::_1, std::placeholders::_2));
   remove_query_server_ = node_ptr_->create_service<remap_msgs::srv::RemoveQuery>(
-    "/remap/remove_query", std::bind(&PluginQuery::removeQueryCallback, this, std::placeholders::_1, std::placeholders::_2));
+    "/remap/remove_query",
+    std::bind(&PluginQuery::removeQueryCallback, this, 
+      std::placeholders::_1, std::placeholders::_2));
   query_client_ = query_node_->create_client<kb_msgs::srv::Query>("/kb/query");
 }
 
@@ -108,8 +113,7 @@ std::shared_ptr<kb_msgs::srv::Query::Response> PluginQuery::performQuery(
         if (query.publish_tf_) {
           geometry_msgs::msg::TransformStamped t;
           auto centroid_it = query.centroids_.find(spatial_query_result.first);
-          if (centroid_it == query.centroids_.end())
-          {
+          if (centroid_it == query.centroids_.end()) {
             RCLCPP_WARN(node_ptr_->get_logger(), "Centroid not found for %s", spatial_query_result.first.c_str());
             continue;
           }
@@ -123,7 +127,12 @@ std::shared_ptr<kb_msgs::srv::Query::Response> PluginQuery::performQuery(
           t.transform.rotation.y = 0;
           t.transform.rotation.z = 0;
           t.transform.rotation.w = 1;
-          tf_broadcaster_->sendTransform(t);
+          if (query.dynamic_) {
+            tf_broadcaster_->sendTransform(t);
+          }
+          else {
+            static_tf_broadcaster_->sendTransform(t);
+          }
         }
       }
     }

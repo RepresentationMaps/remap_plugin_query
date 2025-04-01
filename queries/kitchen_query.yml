@@ -1,0 +1,11 @@
+patterns: ["?kitchen roomType kitchen"]
+vars: []
+models: []
+dynamic: False
+duration:
+  sec: 0
+  nanosec: 0
+frequency:
+  sec: 0
+  nanosec: 0
+publish_tf: 

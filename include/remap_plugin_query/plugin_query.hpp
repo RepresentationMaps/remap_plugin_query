@@ -18,6 +18,7 @@
 #include <pcl/common/centroid.h>
 
 #include <tf2_ros/transform_broadcaster.h>
+#include <tf2_ros/static_transform_broadcaster.h>
 
 #include <memory>
 #include <mutex>
@@ -137,6 +138,7 @@ private:
   std::map<std::string, Query> static_queries_;
 
   std::unique_ptr<tf2_ros::TransformBroadcaster> tf_broadcaster_;
+  std::unique_ptr<tf2_ros::StaticTransformBroadcaster> static_tf_broadcaster_;
 
   void queryCallback(
     const std::shared_ptr<remap_msgs::srv::Query::Request> req,
