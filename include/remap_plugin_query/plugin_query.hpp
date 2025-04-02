@@ -20,6 +20,7 @@
 #include <tf2_ros/transform_broadcaster.h>
 #include <tf2_ros/static_transform_broadcaster.h>
 
+#include <map>
 #include <memory>
 #include <mutex>
 #include <string>
@@ -40,7 +41,8 @@ namespace remap
 {
 namespace plugins
 {
-struct Query {
+struct Query
+{
   std::shared_ptr<rclcpp::Node> node_ptr_;
 
   std::string id_;
@@ -62,7 +64,8 @@ struct Query {
 
   std::map<std::string, rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr> query_pubs_;
 
-  Query(): req_duration_(0, 0), frequency_(0, 0){}
+  Query()
+  : req_duration_(0, 0), frequency_(0, 0) {}
 
   Query(
     const std::shared_ptr<rclcpp::Node> node_ptr,
@@ -73,25 +76,27 @@ struct Query {
     const bool & dynamic,
     const rclcpp::Duration & req_duration,
     const rclcpp::Duration & frequency,
-    const bool & publish_tf = false):
-  node_ptr_(node_ptr),
-  id_(id), 
-  patterns_(patterns),
-  vars_(vars),
-  models_(models),
-  dynamic_(dynamic),
-  req_duration_(req_duration),
-  frequency_(frequency),
-  req_time_(node_ptr_->get_clock()->now()),
-  last_execution_(node_ptr_->get_clock()->now()),
-  publish_tf_(publish_tf),
-  executed_(false) {}
+    const bool & publish_tf = false)
+  : node_ptr_(node_ptr),
+    id_(id),
+    patterns_(patterns),
+    vars_(vars),
+    models_(models),
+    dynamic_(dynamic),
+    req_duration_(req_duration),
+    frequency_(frequency),
+    req_time_(node_ptr_->get_clock()->now()),
+    last_execution_(node_ptr_->get_clock()->now()),
+    publish_tf_(publish_tf),
+    executed_(false) {}
 
-  ~Query() {
+  ~Query()
+  {
     query_pubs_.clear();
   }
 
-  void addPublisher(const std::string & variable) {
+  void addPublisher(const std::string & variable)
+  {
     rclcpp::QoS pub_qos(1);
     pub_qos.reliable();
     if (!dynamic_) {
@@ -110,8 +115,7 @@ struct Query {
     if (cloud.empty()) {
       return;
     }
-    if (query_pubs_.find(variable) == query_pubs_.end())
-    {
+    if (query_pubs_.find(variable) == query_pubs_.end()) {
       addPublisher(variable);
     }
     sensor_msgs::msg::PointCloud2 cloud_msg;
@@ -134,7 +138,8 @@ private:
 
   rclcpp::Service<remap_msgs::srv::Query>::SharedPtr query_server_;
   rclcpp::Service<remap_msgs::srv::RemoveQuery>::SharedPtr remove_query_server_;
-  std::map<std::string, rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr> static_query_pubs_;
+  std::map<std::string,
+    rclcpp::Publisher<sensor_msgs::msg::PointCloud2>::SharedPtr> static_query_pubs_;
   rclcpp::Client<kb_msgs::srv::Query>::SharedPtr query_client_;
 
   std::map<std::string, Query> queries_;
@@ -158,6 +163,7 @@ private:
   std::shared_ptr<kb_msgs::srv::Query::Response> performQuery(Query & query);
 
   Query loadQueryFromYAML(const std::string & file_path);
+
 public:
   PluginQuery();
   PluginQuery(
@@ -169,4 +175,4 @@ public:
 };
 }    // namespace plugins
 }  // namespace remap
-#endif  // REMAP_PLUGIN_FACES__PLUGIN_FACES_HPP_
+#endif  // REMAP_PLUGIN_QUERY__PLUGIN_QUERY_HPP_

@@ -92,7 +92,8 @@ foreach(QUERY_PATH ${QUERIES})
   endif()
   string(REGEX REPLACE ".*/([^/]+/[^/]+)$" "\\1" QUERY_PATH_RELATIVE "${QUERY_PATH}")
   file(APPEND ${CMAKE_CURRENT_BINARY_DIR}/queries_tmp ${QUERY_PATH_RELATIVE})
-  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/queries_tmp DESTINATION share/ament_index/resource_index/remap.plugin_configuration/ RENAME ${PROJECT_NAME})
+  install(FILES ${CMAKE_CURRENT_BINARY_DIR}/queries_tmp
+    DESTINATION share/ament_index/resource_index/remap.plugin_configuration/ RENAME ${PROJECT_NAME})
 endforeach()
 ament_index_register_resource("pal_configuration.remap_manager" CONTENT config/00-query.yml)
 

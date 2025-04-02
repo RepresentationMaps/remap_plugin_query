@@ -12,6 +12,8 @@
 // See the License for the specific language governing permissions and
 // limitations under the License.
 
+#include <yaml-cpp/yaml.h>
+
 #include <chrono>
 #include <filesystem>
 
@@ -22,7 +24,6 @@
 #include <ament_index_cpp/get_resource.hpp>
 
 #include <nlohmann/json.hpp>
-#include <yaml-cpp/yaml.h>
 
 namespace remap
 {
@@ -60,17 +61,21 @@ void PluginQuery::initialize()
   auto descriptor = rcl_interfaces::msg::ParameterDescriptor{};
 
   query_server_ = node_ptr_->create_service<remap_msgs::srv::Query>(
-    "/remap/query", 
-    std::bind(&PluginQuery::queryCallback, this,
+    "/remap/query",
+    std::bind(
+      &PluginQuery::queryCallback, this,
       std::placeholders::_1, std::placeholders::_2));
   remove_query_server_ = node_ptr_->create_service<remap_msgs::srv::RemoveQuery>(
     "/remap/remove_query",
-    std::bind(&PluginQuery::removeQueryCallback, this, 
+    std::bind(
+      &PluginQuery::removeQueryCallback, this,
       std::placeholders::_1, std::placeholders::_2));
   query_client_ = query_node_->create_client<kb_msgs::srv::Query>("/kb/query");
 
   descriptor.description = "Default queries";
-  node_ptr_->declare_parameter("plugin/query/default_queries", std::vector<std::string>(), descriptor);
+  node_ptr_->declare_parameter(
+    "plugin/query/default_queries",
+    std::vector<std::string>(), descriptor);
 
   auto default_queries = node_ptr_->get_parameter("plugin/query/default_queries").as_string_array();
   std::map<std::string, std::filesystem::path> default_queries_path;
@@ -88,8 +93,9 @@ void PluginQuery::initialize()
     std::string query_relative_path;
     char path_delimiter = ';';
     while (std::getline(resource_content_stream, query_relative_path, path_delimiter)) {
-      std::filesystem::path query_path = std::filesystem::path(resource_path) / std::string("share") /
-          resource_name / query_relative_path;
+      std::filesystem::path query_path = std::filesystem::path(resource_path) /
+        std::string("share") /
+        resource_name / query_relative_path;
       std::string query_file_name = std::filesystem::path(query_relative_path).stem().string();
       default_queries_path[query_file_name] = query_path;
       if (!query_path.empty()) {
@@ -116,9 +122,9 @@ std::vector<std::string> PluginQuery::split(
   size_t pos = 0;
   std::string token;
   while ((pos = s.find(delimiter)) != std::string::npos) {
-      token = s.substr(0, pos);
-      tokens.push_back(token);
-      s.erase(0, pos + delimiter.length());
+    token = s.substr(0, pos);
+    tokens.push_back(token);
+    s.erase(0, pos + delimiter.length());
   }
   tokens.push_back(s);
 
@@ -126,45 +132,46 @@ std::vector<std::string> PluginQuery::split(
 }
 
 std::shared_ptr<kb_msgs::srv::Query::Response> PluginQuery::performQuery(
-  Query & query) {
-
+  Query & query)
+{
   kb_msgs::srv::Query::Request kb_query;
   kb_query.patterns = query.patterns_;
   kb_query.vars = query.vars_;
   kb_query.models = query.models_;
 
-  auto kb_query_result = query_client_->async_send_request(std::make_shared<kb_msgs::srv::Query::Request>(kb_query));
+  auto kb_query_result = query_client_->async_send_request(
+    std::make_shared<kb_msgs::srv::Query::Request>(
+      kb_query));
   std::shared_ptr<kb_msgs::srv::Query::Response> kb_query_result_raw;
   // Wait for the result.
   if (rclcpp::spin_until_future_complete(query_node_, kb_query_result) ==
     rclcpp::FutureReturnCode::SUCCESS)
   {
     // we go over the results
-    kb_query_result_raw = kb_query_result.get(); 
+    kb_query_result_raw = kb_query_result.get();
     std::string query_results = kb_query_result_raw->json;
-    if (query_results.size() > 2)
-    {
+    if (query_results.size() > 2) {
       auto query_results_vec = split(query_results.substr(1, query_results.size() - 2), ",");
       std::map<std::string, pcl::PointCloud<pcl::PointXYZI>> spatial_query_results;
-      for (auto query_result : query_results_vec)
-      {
+      for (auto query_result : query_results_vec) {
         auto query_result_json = nlohmann::json::parse(query_result);
-        for (const auto & elem : query_result_json.items())
-        {
-          if (spatial_query_results.find(elem.key()) == spatial_query_results.end())
-          {
+        for (const auto & elem : query_result_json.items()) {
+          if (spatial_query_results.find(elem.key()) == spatial_query_results.end()) {
             pcl::PointCloud<pcl::PointXYZI> cloud;
             spatial_query_results[elem.key()] = cloud;
           }
-          semantic_map_->getEntity(elem.value(), *regions_register_, spatial_query_results[elem.key()]);
+          semantic_map_->getEntity(
+            elem.value(), *regions_register_,
+            spatial_query_results[elem.key()]);
         }
       }
-      for (const auto & spatial_query_result : spatial_query_results)
-      {
+      for (const auto & spatial_query_result : spatial_query_results) {
         if (spatial_query_result.second.size() == 0) {
           continue;
         }
-        query.publish(spatial_query_result.first, spatial_query_result.second, semantic_map_->getFixedFrame());
+        query.publish(
+          spatial_query_result.first, spatial_query_result.second,
+          semantic_map_->getFixedFrame());
         if (query.publish_tf_) {
           geometry_msgs::msg::TransformStamped t;
           auto centroid_it = query.centroids_.find(spatial_query_result.first);
@@ -183,8 +190,7 @@ std::shared_ptr<kb_msgs::srv::Query::Response> PluginQuery::performQuery(
           t.transform.rotation.w = 1;
           if (query.dynamic_) {
             tf_broadcaster_->sendTransform(t);
-          }
-          else {
+          } else {
             static_tf_broadcaster_->sendTransform(t);
           }
         }
@@ -219,7 +225,8 @@ void PluginQuery::queryCallback(
 
   if (!query_client_->wait_for_service(std::chrono::seconds(1))) {
     if (!rclcpp::ok()) {
-      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"),
+      RCLCPP_ERROR(
+        rclcpp::get_logger("rclcpp"),
         "Interrupted while waiting for the service. Exiting.");
       return;
     }
@@ -236,8 +243,7 @@ void PluginQuery::queryCallback(
     static_queries_[req->id] = query;
   }
 
-  if (kb_query_result_raw)
-  {
+  if (kb_query_result_raw) {
     res->success = kb_query_result_raw->success;
     res->json = kb_query_result_raw->json;
     res->error_msg = kb_query_result_raw->error_msg;
@@ -250,8 +256,9 @@ void PluginQuery::queryCallback(
 }
 
 void PluginQuery::removeQueryCallback(
-    const std::shared_ptr<remap_msgs::srv::RemoveQuery::Request> req,
-    const std::shared_ptr<remap_msgs::srv::RemoveQuery::Response> res) {
+  const std::shared_ptr<remap_msgs::srv::RemoveQuery::Request> req,
+  const std::shared_ptr<remap_msgs::srv::RemoveQuery::Response> res)
+{
   auto query_it = queries_.find(req->id);
 
   if (query_it == queries_.end()) {
@@ -261,7 +268,8 @@ void PluginQuery::removeQueryCallback(
   }
 
   if (query_it->second.req_duration_.seconds() >= 0) {
-    res->exec_left = (query_it->second.req_time_ + query_it->second.req_duration_) - node_ptr_->get_clock()->now();
+    res->exec_left = (query_it->second.req_time_ + query_it->second.req_duration_) -
+      node_ptr_->get_clock()->now();
   } else {
     res->exec_left = rclcpp::Duration(-1, 0);
   }
@@ -276,7 +284,8 @@ void PluginQuery::run()
 {
   if (!query_client_->wait_for_service(std::chrono::seconds(1))) {
     if (!rclcpp::ok()) {
-      RCLCPP_ERROR(rclcpp::get_logger("rclcpp"),
+      RCLCPP_ERROR(
+        rclcpp::get_logger("rclcpp"),
         "Interrupted while waiting for the service. Exiting.");
       return;
     }
@@ -288,13 +297,15 @@ void PluginQuery::run()
 
   for (auto & query : queries_) {
     if (query.second.dynamic_) {
-      if (((query.second.req_time_ + query.second.req_duration_) < node_ptr_->get_clock()->now())
-       && (query.second.req_duration_.seconds() > 0)) {
+      if (((query.second.req_time_ + query.second.req_duration_) < node_ptr_->get_clock()->now()) &&
+        (query.second.req_duration_.seconds() > 0))
+      {
         queries_to_remove.push_back(query.first);
         RCLCPP_WARN(node_ptr_->get_logger(), "Completed query %s", query.first.c_str());
       } else {
-        if ((query.second.last_execution_ + query.second.frequency_)
-         < node_ptr_->get_clock()->now()) {
+        if ((query.second.last_execution_ + query.second.frequency_) <
+          node_ptr_->get_clock()->now())
+        {
           performQuery(query.second);
         }
       }
@@ -308,34 +319,35 @@ void PluginQuery::run()
   }
 }
 
-Query PluginQuery::loadQueryFromYAML(const std::string & file_path) {
-    try {
-      YAML::Node config = YAML::LoadFile(file_path);
-    
-      std::string id = config["id"].as<std::string>("");
-      auto patterns = config["patterns"].as<std::vector<std::string>>(std::vector<std::string>());
-      auto vars = config["vars"].as<std::vector<std::string>>(std::vector<std::string>());
-      auto models = config["models"].as<std::vector<std::string>>(std::vector<std::string>());
-      bool dynamic = config["dynamic"].as<bool>(false);
-      
-      int duration_sec = config["duration"]["sec"].as<int>(0);
-      int duration_nanosec = config["duration"]["nanosec"].as<int>(0);
-      rclcpp::Duration req_duration(duration_sec, duration_nanosec);
-      
-      int freq_sec = config["frequency"]["sec"].as<int>(0);
-      int freq_nanosec = config["frequency"]["nanosec"].as<int>(0);
-      rclcpp::Duration frequency(freq_sec, freq_nanosec);
-      
-      bool publish_tf = config["publish_tf"].as<bool>(false);
-      
-      Query query(node_ptr_, id, patterns, vars, models,
-        dynamic, req_duration, frequency, publish_tf);
-      return query;
-    } catch (const std::exception& e) {
-      RCLCPP_ERROR(node_ptr_->get_logger(), "Error loading YAML file: %s", e.what());
-    }
+Query PluginQuery::loadQueryFromYAML(const std::string & file_path)
+{
+  try {
+    YAML::Node config = YAML::LoadFile(file_path);
 
-    return Query();
+    std::string id = config["id"].as<std::string>("");
+    auto patterns = config["patterns"].as<std::vector<std::string>>(std::vector<std::string>());
+    auto vars = config["vars"].as<std::vector<std::string>>(std::vector<std::string>());
+    auto models = config["models"].as<std::vector<std::string>>(std::vector<std::string>());
+    bool dynamic = config["dynamic"].as<bool>(false);
+
+    int duration_sec = config["duration"]["sec"].as<int>(0);
+    int duration_nanosec = config["duration"]["nanosec"].as<int>(0);
+    rclcpp::Duration req_duration(duration_sec, duration_nanosec);
+
+    int freq_sec = config["frequency"]["sec"].as<int>(0);
+    int freq_nanosec = config["frequency"]["nanosec"].as<int>(0);
+    rclcpp::Duration frequency(freq_sec, freq_nanosec);
+
+    bool publish_tf = config["publish_tf"].as<bool>(false);
+
+    Query query(node_ptr_, id, patterns, vars, models,
+      dynamic, req_duration, frequency, publish_tf);
+    return query;
+  } catch (const std::exception & e) {
+    RCLCPP_ERROR(node_ptr_->get_logger(), "Error loading YAML file: %s", e.what());
+  }
+
+  return Query();
 }
 
 }  // namespace plugins
