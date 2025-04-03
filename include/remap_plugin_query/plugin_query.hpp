@@ -112,9 +112,6 @@ struct Query
     const pcl::PointCloud<pcl::PointXYZI> & cloud,
     const std::string & frame_id)
   {
-    if (cloud.empty()) {
-      return;
-    }
     if (query_pubs_.find(variable) == query_pubs_.end()) {
       addPublisher(variable);
     }

@@ -166,9 +166,6 @@ std::shared_ptr<kb_msgs::srv::Query::Response> PluginQuery::performQuery(
         }
       }
       for (const auto & spatial_query_result : spatial_query_results) {
-        if (spatial_query_result.second.size() == 0) {
-          continue;
-        }
         query.publish(
           spatial_query_result.first, spatial_query_result.second,
           semantic_map_->getFixedFrame());
