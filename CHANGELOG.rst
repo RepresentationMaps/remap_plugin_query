@@ -2,8 +2,8 @@
 Changelog for package remap_plugin_query
 ^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^^
 
-Forthcoming
------------
+0.1.0 (2025-04-10)
+------------------
 * basic README
 * allowing publishing empty point clouds
   unfortunately, I can't remember why I introduced in the first
